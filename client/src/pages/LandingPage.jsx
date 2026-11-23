@@ -8,12 +8,7 @@ import { useAuthStore } from '../store/useAuthStore';
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { user, switchUser, demoUsers } = useAuthStore();
-
-  const handleDemoStart = (userId) => {
-    switchUser(userId);
-    navigate('/dashboard');
-  };
+  const { user, isAuthenticated } = useAuthStore();
 
   return (
     <div className="min-h-screen bg-warm-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 selection:bg-forest-800 selection:text-cream">
@@ -65,39 +60,19 @@ export default function LandingPage() {
         {/* Action CTAs */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
           <Link
-            to="/dashboard"
+            to={isAuthenticated ? "/dashboard" : "/login?tab=signup"}
             className="w-full sm:w-auto px-8 py-3.5 rounded-2xl text-sm font-bold bg-forest-800 hover:bg-forest-900 text-cream shadow-book flex items-center justify-center gap-2 transition-all hover:scale-105"
           >
-            <span>Enter App</span>
+            <span>{isAuthenticated ? "Go to Dashboard" : "Create Free Account"}</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
           
-          <button
-            onClick={() => handleDemoStart('usr_elena')}
+          <Link
+            to="/discover"
             className="w-full sm:w-auto px-6 py-3.5 rounded-2xl text-sm font-bold bg-white dark:bg-stone-900 hover:bg-warm-100 dark:hover:bg-stone-800 text-stone-800 dark:text-stone-200 border border-warm-300 dark:border-stone-700 shadow-sm transition-all"
           >
-            Explore as Elena Vance (Demo)
-          </button>
-        </div>
-
-        {/* Demo Persona Quick Select */}
-        <div className="p-4 max-w-xl mx-auto rounded-2xl bg-warm-100/70 dark:bg-stone-900/60 border border-warm-200 dark:border-stone-800">
-          <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 block mb-3 uppercase tracking-wider">
-            Or test with different reader personas:
-          </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {demoUsers.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => handleDemoStart(u.id)}
-                className="p-2 rounded-xl bg-white dark:bg-stone-800 border border-warm-200 dark:border-stone-700 hover:border-forest-700 text-left transition-all"
-              >
-                <img src={u.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover mb-1" />
-                <div className="font-semibold text-xs text-stone-800 dark:text-stone-200 truncate">{u.full_name}</div>
-                <div className="text-[10px] text-stone-400 truncate">@{u.username}</div>
-              </button>
-            ))}
-          </div>
+            Explore Books Catalogue
+          </Link>
         </div>
 
       </section>

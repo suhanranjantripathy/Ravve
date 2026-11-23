@@ -296,8 +296,9 @@ ALTER TABLE reading_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
--- Profiles: Anyone can view public profiles; only owner can update
+-- Profiles: Anyone can view public profiles; only owner can update or insert
 CREATE POLICY "Public profiles are viewable by everyone" ON profiles FOR SELECT USING (is_public = true OR auth.uid() = id);
+CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
 
 -- User Books: Public if user profile is public; private shelves only owner
@@ -323,3 +324,46 @@ CREATE POLICY "Users can manage own journal entries" ON journal_entries FOR ALL 
 -- Notifications: Only recipient can see and update their notifications
 CREATE POLICY "Users can view own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can update own notifications" ON notifications FOR UPDATE USING (auth.uid() = user_id);
+
+-- ====================================================================
+-- SUPABASE AUTH INTEGRATION TRIGGER
+-- ====================================================================
+-- Auto-create profile and initial reading goal when user registers in auth.users
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+    gen_username TEXT;
+    gen_fullname TEXT;
+BEGIN
+    gen_username := COALESCE(NEW.raw_user_meta_data->>'username', split_part(COALESCE(NEW.email, 'reader'), '@', 1));
+    gen_fullname := COALESCE(NEW.raw_user_meta_data->>'full_name', gen_username);
+
+    INSERT INTO public.profiles (id, username, full_name, avatar_url, bio, favorite_genres)
+    VALUES (
+        NEW.id,
+        gen_username,
+        gen_fullname,
+        'https://api.dicebear.com/7.x/bottts/svg?seed=' || NEW.id,
+        'Avid reader on RAAVE',
+        '["Fiction", "Non-Fiction"]'::jsonb
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO public.reading_goals (id, user_id, year, target_books, completed_books)
+    VALUES (
+        uuid_generate_v4(),
+        NEW.id,
+        EXTRACT(YEAR FROM now())::INTEGER,
+        25,
+        0
+    )
+    ON CONFLICT DO NOTHING;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

@@ -14,11 +14,20 @@ router.get('/:username', (req, res) => {
     return res.status(404).json({ error: 'Profile not found' });
   }
 
+  const isSelf = currentUserId === profile.id;
+
+  // If another user's profile is set to private, deny access
+  if (!isSelf && profile.is_public === 0) {
+    return res.status(403).json({ error: 'This reader profile is private' });
+  }
+
   // Follow counts and status
   const followersCount = db.prepare('SELECT COUNT(*) as count FROM follows WHERE following_id = ?').get(profile.id).count;
   const followingCount = db.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ?').get(profile.id).count;
   
-  const isFollowing = db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?').get(currentUserId, profile.id) ? true : false;
+  const isFollowing = currentUserId 
+    ? (db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?').get(currentUserId, profile.id) ? true : false)
+    : false;
 
   // Reading statistics summary
   const booksReadCount = db.prepare("SELECT COUNT(*) as count FROM user_books WHERE user_id = ? AND shelf_type = 'read'").get(profile.id).count;
@@ -26,9 +35,10 @@ router.get('/:username', (req, res) => {
   const wantToReadCount = db.prepare("SELECT COUNT(*) as count FROM user_books WHERE user_id = ? AND shelf_type = 'want_to_read'").get(profile.id).count;
   const totalReviewsCount = db.prepare('SELECT COUNT(*) as count FROM reviews WHERE user_id = ?').get(profile.id).count;
 
-  // Current reading book details
+  // Current reading book details (hide personal_notes from other users)
   const currentlyReadingBooks = db.prepare(`
-    SELECT b.*, ub.current_page, ub.total_pages, ub.start_date, ub.personal_notes
+    SELECT b.*, ub.current_page, ub.total_pages, ub.start_date,
+           ${isSelf ? 'ub.personal_notes' : 'NULL as personal_notes'}
     FROM user_books ub
     JOIN books b ON ub.book_id = b.id
     WHERE ub.user_id = ? AND ub.shelf_type = 'currently_reading'
@@ -46,8 +56,11 @@ router.get('/:username', (req, res) => {
     LIMIT 5
   `).all(profile.id);
 
-  // Custom shelves
-  const customShelves = db.prepare('SELECT * FROM shelves WHERE user_id = ?').all(profile.id);
+  // Custom shelves (only public shelves visible to other users)
+  const customShelves = db.prepare(`
+    SELECT * FROM shelves 
+    WHERE user_id = ? ${isSelf ? '' : 'AND is_public = 1'}
+  `).all(profile.id);
 
   res.json({
     profile: {

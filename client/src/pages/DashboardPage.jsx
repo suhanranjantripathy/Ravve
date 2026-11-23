@@ -1,26 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  BookOpen, Trophy, Flame, Bookmark, CheckCircle, ArrowRight, 
-  Sparkles, Star, Users, MessageSquare, Plus, Compass 
+import {
+  BookOpen, ArrowRight, ChevronLeft, ChevronRight,
+  Users, Compass, MoreHorizontal
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { api } from '../services/api';
-import BookCard from '../components/books/BookCard';
 import ProgressModal from '../components/books/ProgressModal';
+
+function getWeekDays() {
+  const today = new Date();
+  const dow = today.getDay();
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - dow + i);
+    return { label: days[i], date: d.getDate(), isToday: i === dow };
+  });
+}
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
 
   const [currentlyReading, setCurrentlyReading] = useState([]);
-  const [wantToRead, setWantToRead] = useState([]);
-  const [recentRead, setRecentRead] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
   const [readingGoal, setReadingGoal] = useState(null);
-  const [statsSummary, setStatsSummary] = useState(null);
   const [selectedBookForProgress, setSelectedBookForProgress] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [popularIdx, setPopularIdx] = useState(0);
+
+  const weekDays = getWeekDays();
 
   useEffect(() => {
     loadDashboardData();
@@ -29,312 +39,368 @@ export default function DashboardPage() {
   const loadDashboardData = async () => {
     setIsLoading(true);
     try {
-      const [crRes, wtrRes, readRes, recsRes, actRes, goalRes, statsRes] = await Promise.all([
+      const [crRes, recsRes, actRes, goalRes] = await Promise.all([
         api.getUserBooks('currently_reading'),
-        api.getUserBooks('want_to_read'),
-        api.getUserBooks('read'),
         api.getRecommendations(),
-        api.getCommunityFeed('all'),
+        api.getCommunityFeed('following'),
         api.getReadingGoal(),
-        api.getReadingStats()
       ]);
 
       setCurrentlyReading(crRes.books || []);
-      setWantToRead((wtrRes.books || []).slice(0, 4));
-      setRecentRead((readRes.books || []).slice(0, 4));
-      setRecommendations(recsRes.becauseYouRead || recsRes.hiddenGems || []);
-      setRecentActivity((actRes.activities || []).slice(0, 5));
+      setRecommendations(recsRes.becauseYouRead || recsRes.hiddenGems || recsRes.trending || []);
+      setRecentActivity((actRes.activities || []).slice(0, 4));
       setReadingGoal(goalRes.currentGoal);
-      setStatsSummary(statsRes.summary);
     } catch (err) {
-      console.error('Error loading dashboard:', err);
+      console.error('Dashboard load error:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleShelfChange = () => {
-    loadDashboardData();
-  };
+  const firstName = (user?.full_name || user?.username || 'Reader').split(' ')[0];
+  const spotlight = currentlyReading[0] || null;
+  const spotTotal = spotlight?.total_pages || spotlight?.book_pages || 300;
+  const spotCurrent = spotlight?.current_page || 0;
 
-  const handleProgressUpdated = () => {
-    loadDashboardData();
-  };
+  const popular = recommendations.slice(0, 8);
+  const visibleCount = 4;
+  const maxIdx = Math.max(0, popular.length - visibleCount);
 
-  return (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      
-      {/* Editorial Welcome Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-warm-200 dark:border-stone-800">
-        <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-warm-500 dark:text-stone-400">
-            Reading Dashboard
-          </span>
-          <h1 className="font-serif font-black text-2xl sm:text-3xl text-stone-900 dark:text-stone-100">
-            Welcome, {user?.full_name || 'Reader'}
-          </h1>
-          <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-            {statsSummary?.reading_streak_days || 14} day reading streak • You're currently reading {currentlyReading.length} book{currentlyReading.length === 1 ? '' : 's'}.
-          </p>
-        </div>
-
-        {/* Quick Streak & Stats Pills */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300">
-            <Flame className="w-4 h-4 fill-amber-500 text-amber-500" />
-            <div className="text-left">
-              <span className="block font-bold text-xs">{statsSummary?.reading_streak_days || 14} Days</span>
-              <span className="text-[10px] text-amber-600 dark:text-amber-400">Active Streak</span>
-            </div>
-          </div>
-
-          <Link
-            to="/challenges"
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-forest-50 dark:bg-forest-950/40 border border-forest-200 dark:border-forest-900/50 text-forest-800 dark:text-emerald-300 hover:shadow-sm transition-all"
-          >
-            <Trophy className="w-4 h-4 text-amberGold" />
-            <div className="text-left">
-              <span className="block font-bold text-xs">{readingGoal?.completed_books || 24} / {readingGoal?.target_books || 36}</span>
-              <span className="text-[10px] text-forest-600 dark:text-emerald-400">{readingGoal?.percentage || 67}% of 2026 Goal</span>
-            </div>
-          </Link>
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-3">
+          <BookOpen className="w-10 h-10 text-stone-300 mx-auto animate-pulse" />
+          <p className="text-sm text-stone-400 font-medium">Loading your reading space…</p>
         </div>
       </div>
+    );
+  }
 
-      {/* SECTION 1: CURRENTLY READING SPOTLIGHT */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-forest-800 dark:text-emerald-400" />
-            <h2 className="font-serif font-bold text-xl text-stone-900 dark:text-stone-100">
-              Currently Reading
-            </h2>
-          </div>
-          <Link
-            to="/currently-reading"
-            className="text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline flex items-center gap-1"
-          >
-            <span>Focused Tracker</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
+  return (
+    <div className="min-h-screen bg-warm-50 dark:bg-stone-950">
+      <div className="max-w-[1200px] mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
 
-        {currentlyReading.length === 0 ? (
-          <div className="p-8 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 text-center">
-            <BookOpen className="w-8 h-8 text-stone-400 mx-auto mb-2 opacity-60" />
-            <p className="text-sm font-semibold text-stone-700 dark:text-stone-300">No books currently marked as reading.</p>
-            <p className="text-xs text-stone-400 mt-1 mb-4">Pick a book from your Want to Read shelf or discover a new release.</p>
-            <Link
-              to="/discover"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-forest-800 text-cream shadow-sm hover:bg-forest-900 transition-colors"
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span>Discover Books</span>
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currentlyReading.map((book) => {
-              const total = book.total_pages || book.book_pages || 350;
-              const current = book.current_page || 0;
-              const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+        {/* ── LEFT + CENTER ── */}
+        <div className="space-y-10">
 
-              return (
-                <div
-                  key={book.id}
-                  className="flex gap-4 p-4 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm hover:shadow-elevated transition-all"
-                >
-                  <Link to={`/book/${book.book_id || book.id}`} className="shrink-0 w-24 aspect-[2/3] rounded-xl overflow-hidden shadow-book book-card-3d bg-warm-100">
-                    <img src={book.cover_url} alt="" className="w-full h-full object-cover" />
-                  </Link>
-
-                  <div className="flex-1 flex flex-col justify-between min-w-0">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest-700 dark:text-emerald-400">
-                        {book.genre || 'Reading Now'}
-                      </span>
-                      <Link to={`/book/${book.book_id || book.id}`}>
-                        <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 hover:text-forest-700 line-clamp-1">
-                          {book.title}
-                        </h3>
-                      </Link>
-                      <p className="text-xs text-stone-500 dark:text-stone-400 line-clamp-1">{book.author}</p>
-                    </div>
-
-                    {/* Progress Bar & Page Stats */}
-                    <div className="my-2">
-                      <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                        <span className="text-stone-700 dark:text-stone-300">
-                          Page {current} of {total}
-                        </span>
-                        <span className="font-bold text-forest-800 dark:text-emerald-400">{pct}%</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-warm-200 dark:bg-stone-800 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-forest-700 dark:bg-emerald-500 transition-all duration-300"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Quick Update Button */}
-                    <button
-                      onClick={() => setSelectedBookForProgress(book)}
-                      className="w-full py-1.5 px-3 rounded-xl text-xs font-semibold bg-forest-800 hover:bg-forest-900 text-cream transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>Log Progress / Notes</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* SECTION 2: 2026 READING CHALLENGE HERO */}
-      {readingGoal && (
-        <section className="p-6 rounded-3xl bg-gradient-to-br from-forest-900 to-forest-800 text-cream shadow-elevated">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-amberGold flex items-center gap-1.5">
-                <Trophy className="w-4 h-4" /> Annual Reading Challenge
-              </span>
-              <h2 className="font-serif font-black text-2xl text-cream mt-1">
-                {readingGoal.year} Goal: {readingGoal.completed_books} of {readingGoal.target_books} Books Read
-              </h2>
-            </div>
-            <Link
-              to="/challenges"
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-cream border border-white/20 transition-all text-center self-start sm:self-auto"
-            >
-              View Full Challenge →
-            </Link>
-          </div>
-
-          <div className="w-full h-3 rounded-full bg-forest-950/60 overflow-hidden mb-2">
-            <div
-              className="h-full rounded-full bg-amberGold transition-all duration-700"
-              style={{ width: `${readingGoal.percentage}%` }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-warm-200">
-            <span>{readingGoal.books_remaining} books remaining to hit target</span>
-            <span className="font-bold">{readingGoal.percentage}% Completed</span>
-          </div>
-        </section>
-      )}
-
-      {/* SECTION 3: RECOMMENDED BOOKS */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-amberGold" />
-            <h2 className="font-serif font-bold text-xl text-stone-900 dark:text-stone-100">
-              Recommended For You
-            </h2>
-          </div>
-          <Link
-            to="/discover"
-            className="text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline"
-          >
-            Explore all →
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {recommendations.slice(0, 4).map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              onShelfChange={handleShelfChange}
-              onTrackProgress={(b) => setSelectedBookForProgress(b)}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* SECTION 4: WANT TO READ & RECENT ACTIVITY DUAL GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Want to Read Carousel/List */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bookmark className="w-5 h-5 text-amber-600" />
-              <h2 className="font-serif font-bold text-xl text-stone-900 dark:text-stone-100">
-                Want to Read Next
-              </h2>
-            </div>
-            <Link to="/shelves?shelf=want_to_read" className="text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline">
-              View shelf ({wantToRead.length}) →
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {wantToRead.map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                userStatus={{ shelf_type: 'want_to_read' }}
-                onShelfChange={handleShelfChange}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Community Activity Feed Snapshot */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-forest-800 dark:text-emerald-400" />
-                <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100">
-                  Friends' Activity
-                </h3>
-              </div>
-              <Link to="/community" className="text-xs text-forest-700 dark:text-emerald-400 hover:underline">
-                Feed →
+          {/* HERO HEADER */}
+          <div className="flex items-start justify-between gap-6">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-widest text-warm-500 dark:text-stone-400 mb-1">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </p>
+              <h1 className="font-serif font-black text-4xl sm:text-5xl text-stone-900 dark:text-stone-100 leading-tight">
+                Happy reading,<br />{firstName}
+              </h1>
+              <p className="mt-3 text-sm text-stone-500 dark:text-stone-400 max-w-sm leading-relaxed">
+                {spotlight
+                  ? `You're on page ${spotCurrent} of ${spotTotal} — keep the momentum going!`
+                  : 'Your reading adventure awaits. Pick a book and dive in.'}
+              </p>
+              <Link
+                to="/currently-reading"
+                className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 rounded-full text-sm font-semibold bg-forest-800 hover:bg-forest-900 text-cream shadow-md transition-all"
+              >
+                Start reading <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
 
-            <div className="space-y-3.5">
-              {recentActivity.map((act) => (
-                <div key={act.id} className="text-xs pb-3 border-b border-warm-100 dark:border-stone-800 last:border-0 last:pb-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <img src={act.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
-                    <span className="font-semibold text-stone-800 dark:text-stone-200">{act.full_name}</span>
-                    <span className="text-[10px] text-stone-400">
-                      {act.action_type === 'finished_reading' ? 'finished' : act.action_type === 'started_reading' ? 'started' : 'reviewed'}
-                    </span>
-                  </div>
-                  {act.book_title && (
-                    <div className="font-serif font-bold text-stone-900 dark:text-stone-100 line-clamp-1">
-                      {act.book_title}
-                    </div>
-                  )}
-                  {act.review_rating && (
-                    <div className="flex items-center gap-1 text-amber-500 mt-0.5">
-                      {Array.from({ length: act.review_rating }).map((_, i) => (
-                        <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />
-                      ))}
+            {/* Book cover hero */}
+            {spotlight ? (
+              <Link to={`/book/${spotlight.book_id || spotlight.id}`} className="shrink-0 hidden sm:block">
+                <div
+                  className="relative w-36 h-52 rounded-2xl overflow-hidden shadow-book"
+                  style={{ transform: 'perspective(600px) rotateY(-8deg)' }}
+                >
+                  {spotlight.cover_url ? (
+                    <img src={spotlight.cover_url} alt={spotlight.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-warm-200 dark:bg-stone-800">
+                      <BookOpen className="w-12 h-12 text-warm-400 dark:text-stone-600" />
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
+              </Link>
+            ) : (
+              <div className="shrink-0 hidden sm:flex items-center justify-center w-36 h-52 rounded-2xl bg-warm-200 dark:bg-stone-800">
+                <BookOpen className="w-14 h-14 text-warm-400 dark:text-stone-600" />
+              </div>
+            )}
           </div>
 
-          <Link
-            to="/community"
-            className="mt-4 block py-2 text-center text-xs font-semibold text-forest-700 dark:text-emerald-400 bg-forest-50 dark:bg-forest-950/40 rounded-xl hover:bg-forest-100 transition-colors"
-          >
-            Open Community Feed
-          </Link>
+          {/* POPULAR NOW */}
+          <section>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-serif font-bold text-xl text-stone-900 dark:text-stone-100">Popular Now</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPopularIdx(i => Math.max(0, i - 1))}
+                  disabled={popularIdx === 0}
+                  className="w-8 h-8 rounded-full border border-warm-200 dark:border-stone-700 flex items-center justify-center hover:bg-warm-100 dark:hover:bg-stone-800 disabled:opacity-30 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4 text-stone-600 dark:text-stone-400" />
+                </button>
+                <button
+                  onClick={() => setPopularIdx(i => Math.min(maxIdx, i + 1))}
+                  disabled={popularIdx >= maxIdx}
+                  className="w-8 h-8 rounded-full border border-warm-200 dark:border-stone-700 flex items-center justify-center hover:bg-warm-100 dark:hover:bg-stone-800 disabled:opacity-30 transition-all"
+                >
+                  <ChevronRight className="w-4 h-4 text-stone-600 dark:text-stone-400" />
+                </button>
+              </div>
+            </div>
+
+            {popular.length === 0 ? (
+              <div className="p-8 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 text-center">
+                <p className="text-sm text-stone-400">No recommendations yet.</p>
+                <Link to="/discover" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline">
+                  <Compass className="w-3.5 h-3.5" /> Discover books
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-4 overflow-hidden">
+                {popular.slice(popularIdx, popularIdx + visibleCount).map((book) => (
+                  <Link key={book.id} to={`/book/${book.id}`} className="group flex flex-col gap-2">
+                    <div className="aspect-[2/3] rounded-xl overflow-hidden shadow-book bg-warm-100 dark:bg-stone-800 group-hover:shadow-elevated transition-shadow">
+                      {book.cover_url ? (
+                        <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <BookOpen className="w-8 h-8 text-warm-400 dark:text-stone-600" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs font-semibold text-stone-700 dark:text-stone-300 line-clamp-2 leading-tight">
+                      {book.title}
+                    </p>
+                    {book.author && (
+                      <p className="text-[11px] text-stone-400 line-clamp-1">{book.author}</p>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* CURRENTLY READING LIST */}
+          <section>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-serif font-bold text-xl text-stone-900 dark:text-stone-100">Currently Reading</h2>
+              <Link to="/currently-reading" className="text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline flex items-center gap-1">
+                <MoreHorizontal className="w-4 h-4" />
+              </Link>
+            </div>
+
+            {currentlyReading.length === 0 ? (
+              <div className="p-6 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 text-center">
+                <BookOpen className="w-7 h-7 text-stone-300 mx-auto mb-2" />
+                <p className="text-sm text-stone-500 dark:text-stone-400">No books in progress. Start one!</p>
+                <Link to="/discover" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline">
+                  <Compass className="w-3.5 h-3.5" /> Discover books
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {currentlyReading.slice(0, 4).map((book) => {
+                  const total = book.total_pages || book.book_pages || 300;
+                  const current = book.current_page || 0;
+                  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+                  return (
+                    <div
+                      key={book.id}
+                      className="flex items-center gap-4 p-4 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 hover:shadow-sm transition-all"
+                    >
+                      <Link to={`/book/${book.book_id || book.id}`} className="shrink-0 w-14 h-20 rounded-xl overflow-hidden shadow-book bg-warm-100 dark:bg-stone-800">
+                        {book.cover_url ? (
+                          <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <BookOpen className="w-5 h-5 text-warm-400 dark:text-stone-600" />
+                          </div>
+                        )}
+                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <Link to={`/book/${book.book_id || book.id}`}>
+                          <h3 className="font-serif font-bold text-sm text-stone-900 dark:text-stone-100 hover:text-forest-700 dark:hover:text-emerald-400 line-clamp-1">{book.title}</h3>
+                        </Link>
+                        <p className="text-xs text-stone-400 mt-0.5 line-clamp-1">{book.author}</p>
+                        <div className="mt-2 flex items-center gap-3">
+                          <div className="flex-1 h-1.5 rounded-full bg-warm-200 dark:bg-stone-700 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-forest-700 dark:bg-emerald-500 transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-bold text-forest-800 dark:text-emerald-400 shrink-0">
+                            {current} / {total}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedBookForProgress(book)}
+                        className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold bg-forest-800 hover:bg-forest-900 text-cream transition-colors"
+                      >
+                        Update
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
 
+        {/* ── RIGHT SIDEBAR ── */}
+        <div className="space-y-6">
+
+          {/* Reading Progress Card */}
+          {spotlight && (
+            <div className="p-6 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
+              <Link to={`/book/${spotlight.book_id || spotlight.id}`}>
+                <h3 className="font-serif font-bold text-lg text-stone-900 dark:text-stone-100 hover:text-forest-700 dark:hover:text-emerald-400 leading-tight line-clamp-2">
+                  {spotlight.title}
+                </h3>
+              </Link>
+              <p className="text-sm font-bold mt-2 text-forest-800 dark:text-emerald-400">
+                {spotCurrent} / {spotTotal} pages
+              </p>
+              {spotlight.description && (
+                <p className="mt-3 text-xs text-stone-500 dark:text-stone-400 leading-relaxed line-clamp-4">
+                  {spotlight.description}
+                </p>
+              )}
+              <div className="mt-4 w-full h-1.5 rounded-full bg-warm-200 dark:bg-stone-700 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-forest-700 dark:bg-emerald-500 transition-all"
+                  style={{ width: `${spotTotal > 0 ? Math.min(100, Math.round((spotCurrent / spotTotal) * 100)) : 0}%` }}
+                />
+              </div>
+              <button
+                onClick={() => setSelectedBookForProgress(spotlight)}
+                className="mt-4 w-full py-2 rounded-xl text-xs font-bold bg-forest-800 hover:bg-forest-900 text-cream transition-all"
+              >
+                Log Progress
+              </button>
+            </div>
+          )}
+
+          {/* Reading Goal Card */}
+          {readingGoal && (
+            <div className="p-5 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-serif font-bold text-sm text-stone-900 dark:text-stone-100">{readingGoal.year} Reading Goal</h4>
+                <Link to="/challenges" className="text-[11px] font-semibold text-forest-700 dark:text-emerald-400 hover:underline">
+                  View →
+                </Link>
+              </div>
+              <div className="flex items-end gap-2 mb-2">
+                <span className="text-2xl font-black font-serif text-forest-800 dark:text-emerald-400">
+                  {readingGoal.completed_books}
+                </span>
+                <span className="text-sm text-stone-400 dark:text-stone-500 mb-0.5">/ {readingGoal.target_books} books</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-warm-200 dark:bg-stone-700 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-forest-700 dark:bg-emerald-500 transition-all"
+                  style={{ width: `${readingGoal.percentage || 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-stone-400 dark:text-stone-500">{readingGoal.books_remaining} more books to reach your target</p>
+            </div>
+          )}
+
+          {/* Schedule Reading — weekly strip */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-serif font-bold text-sm text-stone-900 dark:text-stone-100">Schedule Reading</h4>
+              <div className="flex items-center gap-1">
+                <ChevronLeft className="w-3.5 h-3.5 text-stone-400" />
+                <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {weekDays.map(({ label, date, isToday }) => (
+                <div key={label} className="flex flex-col items-center gap-1.5">
+                  <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">{label}</span>
+                  <div
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                      isToday
+                        ? 'bg-forest-800 text-cream shadow-sm'
+                        : 'text-stone-600 dark:text-stone-400 hover:bg-warm-100 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    {date}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Link
+              to="/currently-reading"
+              className="mt-4 block text-center text-xs font-semibold py-2 rounded-xl bg-warm-50 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-warm-100 dark:hover:bg-stone-700 transition-colors"
+            >
+              Track today's session
+            </Link>
+          </div>
+
+          {/* Reader Friends */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-forest-800 dark:text-emerald-400" />
+                <h4 className="font-serif font-bold text-sm text-stone-900 dark:text-stone-100">Reader Friends</h4>
+              </div>
+              <Link to="/community" className="w-5 h-5 flex items-center justify-center rounded-full bg-warm-100 dark:bg-stone-800 hover:bg-warm-200 dark:hover:bg-stone-700 transition-colors">
+                <MoreHorizontal className="w-3 h-3 text-stone-500" />
+              </Link>
+            </div>
+
+            {recentActivity.length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-xs text-stone-400">You haven't followed anyone yet. Follow friends to see their reading activity here.</p>
+                <Link to="/community" className="mt-2 inline-block text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline">
+                  Find readers to follow →
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {recentActivity.map((act) => (
+                  <div key={act.id} className="flex items-start gap-3">
+                    {act.avatar_url ? (
+                      <img src={act.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-forest-800 dark:bg-stone-700 flex items-center justify-center shrink-0 text-xs font-bold text-cream">
+                        {(act.full_name || act.username || '?')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-stone-800 dark:text-stone-200 leading-snug">
+                        {act.full_name || act.username}
+                        <span className="font-normal text-stone-400 dark:text-stone-500"> {
+                          act.action_type === 'finished_reading' ? 'finished' :
+                          act.action_type === 'started_reading' ? 'started reading' :
+                          act.action_type === 'reviewed_book' ? 'reviewed' : 'is reading'
+                        }</span>
+                      </p>
+                      {act.book_title && (
+                        <p className="text-xs font-semibold mt-0.5 text-forest-700 dark:text-emerald-400 line-clamp-1">
+                          {act.book_title}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Link
+              to="/community"
+              className="mt-4 block text-center text-xs font-semibold py-2 rounded-xl bg-warm-50 dark:bg-stone-800 text-forest-700 dark:text-emerald-400 hover:bg-forest-50 dark:hover:bg-stone-700 transition-colors"
+            >
+              Open Community Feed
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Reading Progress Modal */}
@@ -342,9 +408,8 @@ export default function DashboardPage() {
         book={selectedBookForProgress}
         isOpen={Boolean(selectedBookForProgress)}
         onClose={() => setSelectedBookForProgress(null)}
-        onUpdated={handleProgressUpdated}
+        onUpdated={loadDashboardData}
       />
-
     </div>
   );
 }

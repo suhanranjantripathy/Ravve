@@ -5,18 +5,26 @@ const router = Router();
 
 // Get custom shelves for user
 router.get('/', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   const targetUserId = req.query.userId || currentUserId;
+  const isSelf = targetUserId === currentUserId;
   const db = getDb();
 
-  const shelves = db.prepare(`
+  // If viewing another user, only show public shelves
+  const query = `
     SELECT s.*, COUNT(ub.id) as book_count
     FROM shelves s
     LEFT JOIN user_books ub ON s.id = ub.custom_shelf_id
-    WHERE s.user_id = ?
+    WHERE s.user_id = ? ${isSelf ? '' : 'AND s.is_public = 1'}
     GROUP BY s.id
     ORDER BY s.created_at ASC
-  `).all(targetUserId);
+  `;
+
+  const shelves = db.prepare(query).all(targetUserId);
 
   res.json({ shelves });
 });

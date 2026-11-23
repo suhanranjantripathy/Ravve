@@ -3,9 +3,13 @@ import getDb from '../db/index.js';
 
 const router = Router();
 
-// Get journal entries
+// Get journal entries (Strictly isolated to current authenticated user)
 router.get('/', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required to access personal journal' });
+  }
+
   const { bookId } = req.query;
   const db = getDb();
 
@@ -34,9 +38,13 @@ router.get('/', (req, res) => {
   res.json({ entries });
 });
 
-// Dedicated favorite quotes collection extracted across all journal entries
+// Dedicated favorite quotes collection (Strictly isolated to current authenticated user)
 router.get('/quotes', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required to access personal quotes' });
+  }
+
   const db = getDb();
 
   const entries = db.prepare(`

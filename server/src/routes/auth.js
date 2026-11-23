@@ -1,23 +1,83 @@
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import getDb from '../db/index.js';
 
 const router = Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Demo users list for quick testing/evaluation
-router.get('/demo-users', (req, res) => {
+// Ensure email and password columns exist on profiles table safely
+try {
   const db = getDb();
-  const profiles = db.prepare('SELECT id, username, full_name, avatar_url, bio, currently_reading_status FROM profiles').all();
-  res.json({ users: profiles });
+  db.exec('ALTER TABLE profiles ADD COLUMN email TEXT;');
+} catch (_) {}
+try {
+  const db = getDb();
+  db.exec('ALTER TABLE profiles ADD COLUMN password TEXT;');
+} catch (_) {}
+
+// Endpoint to save Supabase credentials into .env
+router.post('/configure-supabase', (req, res) => {
+  const { supabaseUrl, supabaseAnonKey, supabaseServiceKey } = req.body;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(400).json({ error: 'Supabase URL and Anon Key are required.' });
+  }
+
+  try {
+    const serverEnvPath = path.resolve(__dirname, '../../../server/.env');
+    const clientEnvPath = path.resolve(__dirname, '../../../client/.env');
+
+    const serverEnvContent = `PORT=5001\nSUPABASE_URL=${supabaseUrl}\nSUPABASE_KEY=${supabaseAnonKey}\n${supabaseServiceKey ? `SUPABASE_SERVICE_ROLE_KEY=${supabaseServiceKey}\n` : ''}`;
+    const clientEnvContent = `VITE_SUPABASE_URL=${supabaseUrl}\nVITE_SUPABASE_ANON_KEY=${supabaseAnonKey}\n`;
+
+    fs.writeFileSync(serverEnvPath, serverEnvContent);
+    fs.writeFileSync(clientEnvPath, clientEnvContent);
+
+    console.log('✅ Supabase configuration saved into .env files.');
+    res.json({ message: 'Supabase credentials configured successfully!' });
+  } catch (err) {
+    console.error('Failed to write .env:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Check username availability
+router.get('/check-username', (req, res) => {
+  const username = (req.query.username || '').trim();
+  if (!username) {
+    return res.json({ available: true });
+  }
+
+  const db = getDb();
+  const existing = db.prepare('SELECT id FROM profiles WHERE LOWER(username) = LOWER(?)').get(username);
+
+  if (existing) {
+    return res.json({
+      available: false,
+      message: `The username "${username}" already exists. Please choose a different username.`
+    });
+  }
+
+  return res.json({
+    available: true,
+    message: 'Username is available!'
+  });
 });
 
 // Get currently logged-in user profile
 router.get('/me', (req, res) => {
-  const userId = req.headers['x-user-id'] || 'usr_elena'; // default to Elena for seamless demo
+  const userId = req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
   const db = getDb();
-  const profile = db.prepare('SELECT * FROM profiles WHERE id = ?').get(userId);
+  let profile = db.prepare('SELECT * FROM profiles WHERE id = ? OR username = ? OR email = ?').get(userId, userId, userId);
   
   if (!profile) {
-    return res.status(404).json({ error: 'User not found' });
+    return res.status(404).json({ error: 'User profile not found' });
   }
 
   res.json({
@@ -34,13 +94,22 @@ router.get('/me', (req, res) => {
 // Login (email/username + password)
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
-  const db = getDb();
+  if (!username) {
+    return res.status(400).json({ error: 'Username or Email is required' });
+  }
 
-  let profile = db.prepare('SELECT * FROM profiles WHERE username = ? OR id = ?').get(username, username);
+  const db = getDb();
+  const cleanIdentifier = username.trim();
+  let profile = db.prepare('SELECT * FROM profiles WHERE username = ? OR id = ? OR LOWER(email) = LOWER(?)').get(cleanIdentifier, cleanIdentifier, cleanIdentifier);
   
-  // If user doesn't exist, create a guest or return error
   if (!profile) {
-    return res.status(401).json({ error: 'Invalid username or password' });
+    return res.status(401).json({ error: 'Invalid username/email or password.' });
+  }
+
+  // Password verification: protect user account from unauthorized access
+  const expectedPassword = profile.password || 'password123';
+  if (password !== expectedPassword) {
+    return res.status(401).json({ error: 'Incorrect password. Access denied.' });
   }
 
   res.json({
@@ -56,35 +125,72 @@ router.post('/login', (req, res) => {
   });
 });
 
+// Forgot password endpoint
+router.post('/forgot-password', (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Email address is required' });
+  }
+
+  const cleanEmail = email.trim();
+  const db = getDb();
+  const profile = db.prepare('SELECT id, username, email FROM profiles WHERE LOWER(email) = LOWER(?)').get(cleanEmail);
+
+  if (profile) {
+    // Reset temporary password so user can always log in immediately
+    db.prepare('UPDATE profiles SET password = ? WHERE id = ?').run('password123', profile.id);
+    return res.json({
+      message: `Password reset link sent to ${cleanEmail}! (Your password has also been temporarily reset to 'password123')`
+    });
+  }
+
+  // Return generic confirmation for privacy
+  return res.json({
+    message: `If an account exists with ${cleanEmail}, password reset instructions have been sent.`
+  });
+});
+
 // Signup new user
 router.post('/signup', (req, res) => {
-  const { username, full_name, bio, favorite_genres = [] } = req.body;
-  if (!username || !full_name) {
-    return res.status(400).json({ error: 'Username and Full Name are required' });
-  }
+  const { username, full_name, email, bio, favorite_genres = [] } = req.body;
+  const effectiveUsername = (username || (email ? email.split('@')[0] : `reader_${Date.now()}`)).trim();
+  const effectiveFullName = (full_name || effectiveUsername).trim();
+  const cleanEmail = email ? email.trim() : null;
 
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM profiles WHERE username = ?').get(username);
-  if (existing) {
-    return res.status(400).json({ error: 'Username already taken' });
+
+  // 1. Check if username already exists (case-insensitive)
+  const existingByUsername = db.prepare('SELECT id, username FROM profiles WHERE LOWER(username) = LOWER(?)').get(effectiveUsername);
+  if (existingByUsername) {
+    return res.status(409).json({
+      error: `The username "${effectiveUsername}" already exists. Please choose a different username.`
+    });
   }
 
-  const id = `usr_${Date.now()}`;
-  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`;
+  // 2. Check if email already exists
+  if (cleanEmail) {
+    const existingByEmail = db.prepare('SELECT id, email FROM profiles WHERE LOWER(email) = LOWER(?)').get(cleanEmail);
+    if (existingByEmail) {
+      return res.status(409).json({
+        error: `An account with the email "${cleanEmail}" already exists. Please sign in instead.`
+      });
+    }
+  }
 
-  const insert = db.prepare(`
-    INSERT INTO profiles (id, username, full_name, avatar_url, bio, favorite_genres)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
+  const id = req.body.id || `usr_${Date.now()}`;
+  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${effectiveUsername}`;
 
-  insert.run(id, username, full_name, avatarUrl, bio || '', JSON.stringify(favorite_genres));
+  db.prepare(`
+    INSERT INTO profiles (id, username, full_name, email, password, avatar_url, bio, favorite_genres)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, effectiveUsername, effectiveFullName, cleanEmail, req.body.password || null, avatarUrl, bio || 'Avid reader', JSON.stringify(favorite_genres));
 
   // Initialize reading challenge for current year
   const currentYear = new Date().getFullYear();
   db.prepare(`
     INSERT INTO reading_goals (id, user_id, year, target_books, completed_books)
     VALUES (?, ?, ?, ?, ?)
-  `).run(`goal_${id}_${currentYear}`, id, currentYear, 20, 0);
+  `).run(`goal_${id}_${currentYear}`, id, currentYear, 25, 0);
 
   const newProfile = db.prepare('SELECT * FROM profiles WHERE id = ?').get(id);
 

@@ -5,7 +5,11 @@ const router = Router();
 
 // Get notifications for user
 router.get('/', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   const db = getDb();
 
   const notifications = db.prepare(`
@@ -17,7 +21,7 @@ router.get('/', (req, res) => {
     LIMIT 30
   `).all(currentUserId);
 
-  const unreadCount = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0').get(currentUserId).count;
+  const unreadCount = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0').get(currentUserId)?.count || 0;
 
   res.json({
     notifications: notifications.map(n => ({ ...n, is_read: Boolean(n.is_read) })),
@@ -27,7 +31,10 @@ router.get('/', (req, res) => {
 
 // Mark single notification as read
 router.put('/:id/read', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
   const { id } = req.params;
   const db = getDb();
 
@@ -37,7 +44,10 @@ router.put('/:id/read', (req, res) => {
 
 // Mark all notifications as read
 router.put('/mark-all-read', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
   const db = getDb();
 
   db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(currentUserId);

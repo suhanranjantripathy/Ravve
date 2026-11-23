@@ -6,13 +6,31 @@ const router = Router();
 
 // Get books for current user (or specified user) filtered by shelf
 router.get('/', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   const targetUserId = req.query.userId || currentUserId;
+  const isSelf = targetUserId === currentUserId;
   const { shelf, sort = 'updated_at', order = 'DESC' } = req.query;
 
   const db = getDb();
+
+  // If viewing another user, verify their profile is public
+  if (!isSelf) {
+    const targetProfile = db.prepare('SELECT is_public FROM profiles WHERE id = ?').get(targetUserId);
+    if (!targetProfile || targetProfile.is_public === 0) {
+      return res.status(403).json({ error: 'This user profile is private' });
+    }
+  }
+
   let query = `
-    SELECT ub.*, b.title, b.author, b.cover_url, b.genre, b.average_rating as book_avg_rating, b.page_count as book_pages, b.isbn, b.published_date, s.name as custom_shelf_name
+    SELECT ub.id, ub.user_id, ub.book_id, ub.shelf_type, ub.custom_shelf_id,
+           ub.current_page, ub.total_pages, ub.user_rating, ub.start_date, ub.finish_date,
+           ${isSelf ? 'ub.personal_notes' : 'NULL as personal_notes'},
+           ub.created_at, ub.updated_at,
+           b.title, b.author, b.cover_url, b.genre, b.average_rating as book_avg_rating, b.page_count as book_pages, b.isbn, b.published_date, s.name as custom_shelf_name
     FROM user_books ub
     JOIN books b ON ub.book_id = b.id
     LEFT JOIN shelves s ON ub.custom_shelf_id = s.id
@@ -20,6 +38,11 @@ router.get('/', (req, res) => {
   `;
 
   const params = [targetUserId];
+
+  // If viewing someone else, exclude books on private custom shelves
+  if (!isSelf) {
+    query += ` AND (ub.custom_shelf_id IS NULL OR s.is_public = 1)`;
+  }
 
   if (shelf && shelf !== 'all') {
     if (shelf === 'custom' && req.query.customShelfId) {

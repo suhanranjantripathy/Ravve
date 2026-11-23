@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Users, Heart, MessageSquare, Send, BookOpen, Star, 
-  Sparkles, CheckCircle, Bookmark, Flame 
+  Sparkles, CheckCircle, Bookmark, Flame, UserPlus, 
+  Search, AtSign, AlertCircle, Check, UserMinus 
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/useAuthStore';
@@ -12,12 +13,23 @@ export default function CommunityFeedPage() {
   const [feedFilter, setFeedFilter] = useState('all'); // 'all' | 'following'
   const [activities, setActivities] = useState([]);
   const [suggestedReaders, setSuggestedReaders] = useState([]);
+  const [myFriends, setMyFriends] = useState([]);
   const [newPostText, setNewPostText] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Follow friend by username state
+  const [friendUsernameInput, setFriendUsernameInput] = useState('');
+  const [friendSearchResult, setFriendSearchResult] = useState(null);
+  const [friendSearchError, setFriendSearchError] = useState(null);
+  const [friendActionMessage, setFriendActionMessage] = useState(null);
+  const [isSearchingFriend, setIsSearchingFriend] = useState(false);
+  const [isSubmittingFollow, setIsSubmittingFollow] = useState(false);
+  const searchDebounceRef = useRef(null);
+
   useEffect(() => {
     loadFeed();
+    loadMyFriends();
   }, [feedFilter]);
 
   const loadFeed = async () => {
@@ -33,6 +45,84 @@ export default function CommunityFeedPage() {
       console.error(err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMyFriends = async () => {
+    try {
+      const res = await api.getMyFriends();
+      setMyFriends(res.friends || []);
+    } catch (err) {
+      console.warn('Failed to load friends:', err);
+    }
+  };
+
+  const handleFriendUsernameChange = (e) => {
+    const rawVal = e.target.value;
+    setFriendUsernameInput(rawVal);
+    setFriendSearchError(null);
+    setFriendActionMessage(null);
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    const clean = rawVal.replace(/^@/, '').trim();
+    if (!clean) {
+      setFriendSearchResult(null);
+      return;
+    }
+
+    setIsSearchingFriend(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await api.searchUserByUsername(clean);
+        setFriendSearchResult(res.user);
+        setFriendSearchError(null);
+      } catch (err) {
+        setFriendSearchResult(null);
+        setFriendSearchError(err.message || `User "@${clean}" not found.`);
+      } finally {
+        setIsSearchingFriend(false);
+      }
+    }, 350);
+  };
+
+  const handleFollowFriend = async (targetUsername) => {
+    const clean = (targetUsername || friendUsernameInput).replace(/^@/, '').trim();
+    if (!clean) return;
+
+    setIsSubmittingFollow(true);
+    setFriendSearchError(null);
+    setFriendActionMessage(null);
+
+    try {
+      const res = await api.followByUsername(clean);
+      setFriendActionMessage(res.message);
+      if (friendSearchResult && friendSearchResult.username.toLowerCase() === clean.toLowerCase()) {
+        setFriendSearchResult(prev => ({ ...prev, is_following: true }));
+      }
+      loadMyFriends();
+      loadFeed();
+    } catch (err) {
+      setFriendSearchError(err.message || 'Failed to follow user.');
+    } finally {
+      setIsSubmittingFollow(false);
+    }
+  };
+
+  const handleUnfollowFriend = async (targetUsername) => {
+    const clean = targetUsername.replace(/^@/, '').trim();
+    try {
+      const res = await api.unfollowByUsername(clean);
+      setFriendActionMessage(res.message);
+      if (friendSearchResult && friendSearchResult.username.toLowerCase() === clean.toLowerCase()) {
+        setFriendSearchResult(prev => ({ ...prev, is_following: false }));
+      }
+      loadMyFriends();
+      loadFeed();
+    } catch (err) {
+      setFriendSearchError(err.message || 'Failed to unfollow.');
     }
   };
 
@@ -257,31 +347,188 @@ export default function CommunityFeedPage() {
 
         </div>
 
-        {/* Sidebar: Suggested Readers */}
+        {/* Sidebar: Follow by Username & Friends */}
         <div className="space-y-6">
+          
+          {/* 1. Follow a Friend by Username Card */}
+          <div className="p-6 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <UserPlus className="w-4 h-4 text-forest-700 dark:text-emerald-400" />
+              <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100">
+                Follow by Username
+              </h3>
+            </div>
+            <p className="text-[11px] text-stone-500 dark:text-stone-400 mb-4">
+              Connect with your friends by searching their exact reader username.
+            </p>
+
+            {/* Username Input */}
+            <div className="relative mb-3">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-xs font-semibold">
+                @
+              </span>
+              <input
+                type="text"
+                value={friendUsernameInput}
+                onChange={handleFriendUsernameChange}
+                placeholder="friend_username..."
+                className="w-full pl-7 pr-8 py-2 text-xs rounded-xl bg-warm-50 dark:bg-stone-800 border border-warm-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-forest-700/40"
+              />
+              {isSearchingFriend && (
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-forest-600 animate-ping inline-block" />
+                </span>
+              )}
+            </div>
+
+            {/* Error Message */}
+            {friendSearchError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11px] flex items-center gap-1.5 mb-3 animate-in fade-in">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{friendSearchError}</span>
+              </div>
+            )}
+
+            {/* Success Action Message */}
+            {friendActionMessage && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-[11px] flex items-center gap-1.5 mb-3 animate-in fade-in">
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>{friendActionMessage}</span>
+              </div>
+            )}
+
+            {/* Friend Profile Preview Card */}
+            {friendSearchResult && (
+              <div className="p-3 rounded-2xl bg-warm-50 dark:bg-stone-800/70 border border-warm-200 dark:border-stone-700 animate-in fade-in space-y-2.5">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={friendSearchResult.avatar_url}
+                    alt=""
+                    className="w-10 h-10 rounded-full object-cover ring-1 ring-warm-300 dark:ring-stone-700 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-xs text-stone-900 dark:text-stone-100 truncate">
+                      {friendSearchResult.full_name}
+                    </div>
+                    <div className="text-[11px] text-forest-700 dark:text-emerald-400 font-mono truncate">
+                      @{friendSearchResult.username}
+                    </div>
+                    {friendSearchResult.currently_reading_status && (
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                        📖 {friendSearchResult.currently_reading_status}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {friendSearchResult.is_self ? (
+                  <div className="text-[11px] text-stone-400 italic text-center py-1">
+                    (This is your own profile)
+                  </div>
+                ) : friendSearchResult.is_following ? (
+                  <button
+                    onClick={() => handleUnfollowFriend(friendSearchResult.username)}
+                    className="w-full py-1.5 rounded-xl text-xs font-semibold bg-stone-200 hover:bg-rose-100 text-stone-700 hover:text-rose-700 dark:bg-stone-700 dark:text-stone-200 dark:hover:bg-rose-950 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <UserMinus className="w-3.5 h-3.5" />
+                    <span>Unfollow @{friendSearchResult.username}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleFollowFriend(friendSearchResult.username)}
+                    disabled={isSubmittingFollow}
+                    className="w-full py-1.5 rounded-xl text-xs font-bold bg-forest-800 hover:bg-forest-900 text-cream transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Follow @{friendSearchResult.username}</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!friendSearchResult && !friendSearchError && (
+              <button
+                onClick={() => handleFollowFriend(friendUsernameInput)}
+                disabled={!friendUsernameInput.trim() || isSubmittingFollow}
+                className="w-full py-2 rounded-xl text-xs font-bold bg-forest-800 hover:bg-forest-900 text-cream transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Follow by Username</span>
+              </button>
+            )}
+          </div>
+
+          {/* 2. My Friends / Reading Circle */}
+          <div className="p-6 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-forest-700 dark:text-emerald-400" />
+                <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100">
+                  Friends You Follow
+                </h3>
+              </div>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-forest-100 dark:bg-forest-950 text-forest-800 dark:text-emerald-300">
+                {myFriends.length}
+              </span>
+            </div>
+
+            {myFriends.length === 0 ? (
+              <p className="text-xs text-stone-400 italic">
+                You haven't followed any friends yet. Type their username above to start seeing their reading updates!
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                {myFriends.map((f) => (
+                  <div key={f.id} className="flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-warm-50 dark:hover:bg-stone-800/60 transition-colors">
+                    <Link to={`/profile/${f.username}`} className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <img src={f.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-warm-200" />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-xs text-stone-900 dark:text-stone-100 truncate">
+                          {f.full_name}
+                        </div>
+                        <div className="text-[10px] text-stone-400 font-mono truncate">
+                          @{f.username}
+                        </div>
+                      </div>
+                    </Link>
+
+                    <button
+                      onClick={() => handleUnfollowFriend(f.username)}
+                      title="Unfollow"
+                      className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-warm-100 dark:hover:bg-stone-700 transition-colors"
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Community Suggestions */}
           <div className="p-6 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-4 h-4 text-amberGold" />
               <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100">
-                Readers to Follow
+                Discover Readers
               </h3>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {suggestedReaders.map((r) => (
                 <div key={r.id} className="flex items-start justify-between gap-3 pb-3 border-b border-warm-100 dark:border-stone-800 last:border-0 last:pb-0">
                   <Link to={`/profile/${r.username}`} className="flex items-start gap-2.5 min-w-0">
-                    <img src={r.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 ring-1 ring-warm-300" />
+                    <img src={r.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-warm-300" />
                     <div className="min-w-0">
                       <div className="font-semibold text-xs text-stone-900 dark:text-stone-100 truncate">{r.full_name}</div>
-                      <div className="text-[10px] text-stone-400 truncate">@{r.username}</div>
+                      <div className="text-[10px] text-forest-700 dark:text-emerald-400 font-mono truncate">@{r.username}</div>
                       <div className="text-[10px] text-stone-500 dark:text-stone-400 line-clamp-1 mt-0.5">{r.bio}</div>
                     </div>
                   </Link>
 
                   <button
-                    onClick={() => handleFollowUser(r.id)}
-                    className="px-3 py-1 rounded-full text-[11px] font-bold bg-forest-800 text-cream hover:bg-forest-900 transition-colors shrink-0"
+                    onClick={() => handleFollowFriend(r.username)}
+                    className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-forest-800 text-cream hover:bg-forest-900 transition-colors shrink-0"
                   >
                     Follow
                   </button>
@@ -289,6 +536,7 @@ export default function CommunityFeedPage() {
               ))}
             </div>
           </div>
+
         </div>
 
       </div>

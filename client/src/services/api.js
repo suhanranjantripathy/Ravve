@@ -2,11 +2,11 @@
 const API_BASE = '/api';
 
 export async function request(endpoint, options = {}) {
-  const currentUserId = localStorage.getItem('raave_user_id') || 'usr_elena';
+  const currentUserId = localStorage.getItem('raave_user_id');
 
   const headers = {
     'Content-Type': 'application/json',
-    'x-user-id': currentUserId,
+    ...(currentUserId ? { 'x-user-id': currentUserId } : {}),
     ...(options.headers || {})
   };
 
@@ -42,9 +42,10 @@ export async function request(endpoint, options = {}) {
 export const api = {
   // Auth & Profiles
   getCurrentUser: () => request('/auth/me'),
-  getDemoUsers: () => request('/auth/demo-users'),
+  checkUsername: (username) => request(`/auth/check-username?username=${encodeURIComponent(username)}`),
   login: (credentials) => request('/auth/login', { method: 'POST', body: credentials }),
   signup: (userData) => request('/auth/signup', { method: 'POST', body: userData }),
+  forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: { email } }),
   getProfile: (username) => request(`/profiles/${username}`),
   updateProfile: (data) => request('/profiles', { method: 'PUT', body: data }),
 
@@ -89,6 +90,10 @@ export const api = {
 
   // Social & Community
   toggleFollow: (targetUserId) => request(`/social/follow/${targetUserId}`, { method: 'POST' }),
+  followByUsername: (username) => request('/social/follow-by-username', { method: 'POST', body: { username } }),
+  unfollowByUsername: (username) => request('/social/unfollow-by-username', { method: 'POST', body: { username } }),
+  searchUserByUsername: (username) => request(`/social/user-by-username/${encodeURIComponent(username)}`),
+  getMyFriends: () => request('/social/my-friends'),
   getCommunityFeed: (filter = 'all') => request(`/social/feed?filter=${filter}`),
   likeActivity: (id) => request(`/social/activity/${id}/like`, { method: 'POST' }),
   postActivity: (content, book_id = null) => request('/social/post', { method: 'POST', body: { content, book_id } }),

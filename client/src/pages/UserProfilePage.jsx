@@ -47,11 +47,16 @@ export default function UserProfilePage() {
   const handleToggleFollow = async () => {
     if (!profileData) return;
     try {
-      const res = await api.toggleFollow(profileData.id);
-      setIsFollowing(res.following);
+      if (isFollowing) {
+        await api.unfollowByUsername(profileData.username);
+        setIsFollowing(false);
+      } else {
+        await api.followByUsername(profileData.username);
+        setIsFollowing(true);
+      }
       loadProfile();
     } catch (err) {
-      console.error(err);
+      alert(err.message || 'Follow action failed');
     }
   };
 
@@ -103,7 +108,7 @@ export default function UserProfilePage() {
                     : 'bg-forest-800 hover:bg-forest-900 text-cream shadow-md'
                 }`}
               >
-                {isFollowing ? 'Following' : '+ Follow Reader'}
+                {isFollowing ? `Following @${profileData.username}` : `+ Follow @${profileData.username}`}
               </button>
             )}
 
