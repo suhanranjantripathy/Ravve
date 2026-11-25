@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
   Star, Bookmark, BookOpen, Check, Heart, MessageSquare, 
-  Share2, Scale, AlertTriangle, User, Calendar, Book 
+  Share2, Scale, AlertTriangle, User, Calendar, Book, ExternalLink 
 } from 'lucide-react';
 import { api } from '../services/api';
 import BookCard from '../components/books/BookCard';
@@ -13,6 +13,7 @@ export default function BookDetailsPage() {
   const { id } = useParams();
 
   const [book, setBook] = useState(null);
+  const [googleBooks, setGoogleBooks] = useState(null);
   const [userBook, setUserBook] = useState(null);
   const [ratingDistribution, setRatingDistribution] = useState({ 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 });
   const [reviews, setReviews] = useState([]);
@@ -36,6 +37,7 @@ export default function BookDetailsPage() {
       ]);
 
       setBook(bookRes.book);
+      setGoogleBooks(bookRes.googleBooks || null);
       setUserBook(bookRes.userBook);
       setRatingDistribution(bookRes.ratingDistribution);
       setSimilarBooks(bookRes.similarBooks || []);
@@ -190,7 +192,7 @@ export default function BookDetailsPage() {
             </p>
 
             {/* Rating Stars Summary */}
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex flex-wrap items-center gap-3 mb-6">
               <div className="flex items-center gap-1 text-amber-500">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <Star
@@ -207,8 +209,19 @@ export default function BookDetailsPage() {
                 {Number(book.average_rating).toFixed(2)}
               </span>
               <span className="text-xs text-stone-400">
-                ({book.ratings_count || totalReviewsCount} ratings)
+                ({book.ratings_count || totalReviewsCount} {googleBooks?.google_rating ? 'Google Books ratings' : 'ratings'})
               </span>
+              {googleBooks?.google_books_url && (
+                <a
+                  href={googleBooks.google_books_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-forest-700 dark:text-emerald-400 hover:underline"
+                >
+                  <span>Google Books Reviews</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
             </div>
 
             {/* Description */}

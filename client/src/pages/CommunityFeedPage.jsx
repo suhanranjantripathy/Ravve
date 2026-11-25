@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  Users, Heart, MessageSquare, Send, BookOpen, Star, 
-  Sparkles, CheckCircle, Bookmark, Flame, UserPlus, 
-  Search, AtSign, AlertCircle, Check, UserMinus 
+import {
+  Users, Heart, MessageSquare, Send, BookOpen, Star,
+  Sparkles, CheckCircle, Bookmark, Flame, UserPlus,
+  Search, AtSign, AlertCircle, Check, UserMinus
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/useAuthStore';
@@ -162,7 +162,7 @@ export default function CommunityFeedPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      
+
       {/* Editorial Header */}
       <div className="pb-4 border-b border-warm-200 dark:border-stone-800">
         <span className="text-xs font-bold uppercase tracking-wider text-warm-500 dark:text-stone-400">
@@ -177,10 +177,10 @@ export default function CommunityFeedPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
+
         {/* Main Feed Column */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* Post a Reading Thought Form */}
           <div className="p-5 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
             <form onSubmit={handlePostSubmit}>
@@ -217,21 +217,19 @@ export default function CommunityFeedPage() {
             <div className="flex rounded-2xl bg-warm-100 dark:bg-stone-800 p-1">
               <button
                 onClick={() => setFeedFilter('all')}
-                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                  feedFilter === 'all'
+                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all ${feedFilter === 'all'
                     ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-sm'
                     : 'text-stone-500 hover:text-stone-900 dark:text-stone-400'
-                }`}
+                  }`}
               >
                 All Community Activity
               </button>
               <button
                 onClick={() => setFeedFilter('following')}
-                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                  feedFilter === 'following'
+                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all ${feedFilter === 'following'
                     ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-sm'
                     : 'text-stone-500 hover:text-stone-900 dark:text-stone-400'
-                }`}
+                  }`}
               >
                 Following Only
               </button>
@@ -349,7 +347,7 @@ export default function CommunityFeedPage() {
 
         {/* Sidebar: Follow by Username & Friends */}
         <div className="space-y-6">
-          
+
           {/* 1. Follow a Friend by Username Card */}
           <div className="p-6 rounded-3xl bg-white dark:bg-stone-900 border border-warm-200 dark:border-stone-800 shadow-sm">
             <div className="flex items-center gap-2 mb-2">

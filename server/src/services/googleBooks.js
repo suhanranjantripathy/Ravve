@@ -60,7 +60,9 @@ function processGoogleBooksItems(items, db) {
     ON CONFLICT(id) DO UPDATE SET
       description = excluded.description,
       cover_url = COALESCE(books.cover_url, excluded.cover_url),
-      page_count = CASE WHEN books.page_count = 0 THEN excluded.page_count ELSE books.page_count END
+      page_count = CASE WHEN books.page_count = 0 THEN excluded.page_count ELSE books.page_count END,
+      average_rating = CASE WHEN excluded.average_rating > 0 THEN excluded.average_rating ELSE books.average_rating END,
+      ratings_count = CASE WHEN excluded.ratings_count > 0 THEN excluded.ratings_count ELSE books.ratings_count END
   `);
 
   const results = [];
@@ -96,8 +98,8 @@ function processGoogleBooksItems(items, db) {
     const genre = (info.categories && info.categories.length > 0) ? info.categories[0] : 'General';
     const categories = JSON.stringify(info.categories || ['General']);
     const pageCount = info.pageCount || 320;
-    const avgRating = info.averageRating || 4.2;
-    const ratingsCount = info.ratingsCount || Math.floor(Math.random() * 80) + 10;
+    const avgRating = info.averageRating || 0;
+    const ratingsCount = info.ratingsCount || 0;
 
     try {
       upsertBook.run(id, isbn, title, authors, description, coverUrl, publisher, publishedDate, genre, categories, pageCount, avgRating, ratingsCount);
@@ -153,8 +155,8 @@ function processOpenLibraryDocs(docs, db) {
     const genre = (doc.subject && doc.subject.length > 0) ? doc.subject[0] : 'General';
     const categories = JSON.stringify(doc.subject ? doc.subject.slice(0, 4) : ['General']);
     const pageCount = doc.number_of_pages_median || 350;
-    const avgRating = 4.25;
-    const ratingsCount = doc.ratings_count || Math.floor(Math.random() * 60) + 15;
+    const avgRating = doc.ratings_average ? Math.round(doc.ratings_average * 100) / 100 : 0;
+    const ratingsCount = doc.ratings_count || 0;
     const description = `Acclaimed work by ${authors}, first published in ${publishedDate}. A celebrated entry in ${genre} literature.`;
 
     try {
@@ -209,4 +211,65 @@ export function parseBook(book) {
     ...book,
     categories: typeof book.categories === 'string' ? JSON.parse(book.categories || '[]') : book.categories
   };
+}
+
+/**
+ * Fetch live rating, ratingsCount, and Google Books infoLink for a book.
+ * Falls back gracefully if Google Books is rate-limited or unreachable.
+ */
+export async function fetchGoogleBooksRatingAndLink(book) {
+  if (!book) return null;
+
+  const isGoogleVolumeId = book.id && !book.id.startsWith('book_') && !book.id.startsWith('ol_');
+  const queries = [];
+
+  if (isGoogleVolumeId) {
+    queries.push(`https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(book.id)}`);
+  }
+  if (book.isbn) {
+    queries.push(`https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(book.isbn)}&maxResults=1`);
+  }
+  if (book.title) {
+    const q = book.author ? `intitle:${book.title} inauthor:${book.author}` : `intitle:${book.title}`;
+    queries.push(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`);
+  }
+
+  for (const url of queries) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'RAAVE-App/1.0' },
+        signal: AbortSignal.timeout(2500)
+      });
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const volume = data.volumeInfo ? data : data.items?.[0];
+      const info = volume?.volumeInfo;
+      if (!info) continue;
+
+      const googleRating = info.averageRating || null;
+      const googleRatingsCount = info.ratingsCount || null;
+      const googleBooksUrl = info.infoLink || info.previewLink || (volume.id ? `https://books.google.com/books?id=${volume.id}` : null);
+
+      if (googleRating || googleRatingsCount) {
+        const db = getDb();
+        db.prepare(`
+          UPDATE books
+          SET average_rating = COALESCE(?, average_rating),
+              ratings_count = COALESCE(?, ratings_count)
+          WHERE id = ?
+        `).run(googleRating, googleRatingsCount, book.id);
+      }
+
+      return {
+        google_rating: googleRating,
+        google_ratings_count: googleRatingsCount,
+        google_books_url: googleBooksUrl
+      };
+    } catch (_) {
+      // Try next query or fail gracefully
+    }
+  }
+
+  return null;
 }

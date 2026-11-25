@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import getDb from '../db/index.js';
-import { searchBooksOnline, searchLocalBooks, parseBook } from '../services/googleBooks.js';
+import { searchBooksOnline, searchLocalBooks, parseBook, fetchGoogleBooksRatingAndLink } from '../services/googleBooks.js';
 
 const router = Router();
 
@@ -159,7 +159,7 @@ router.get('/compare', (req, res) => {
 });
 
 // Single book details (with rating distribution and user's shelf status)
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   const { id } = req.params;
   const currentUserId = req.headers['x-user-id'] || 'usr_elena';
   const db = getDb();
@@ -171,6 +171,16 @@ router.get('/:id', (req, res) => {
     const byTitle = db.prepare('SELECT * FROM books WHERE title LIKE ?').get(`%${id}%`);
     if (byTitle) book = byTitle;
     else return res.status(404).json({ error: 'Book not found' });
+  }
+
+  // Enrich with live Google Books rating & review link
+  const googleBooks = await fetchGoogleBooksRatingAndLink(book);
+  if (googleBooks?.google_rating) {
+    book = {
+      ...book,
+      average_rating: googleBooks.google_rating,
+      ratings_count: googleBooks.google_ratings_count || book.ratings_count
+    };
   }
 
   // User shelf status for this book
@@ -195,6 +205,7 @@ router.get('/:id', (req, res) => {
 
   res.json({
     book: parseBook(book),
+    googleBooks,
     userBook: userBook || null,
     ratingDistribution: ratingsDist,
     totalReviews: allReviews.length,

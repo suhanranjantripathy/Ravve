@@ -148,7 +148,7 @@ export default function UserProfilePage() {
 
           <div>
             <span className="font-serif font-black text-2xl text-forest-800 dark:text-emerald-400 block">
-              {profileData.reading_streak_days || 14}
+              {profileData.reading_streak_days ?? 0}
             </span>
             <span className="text-xs text-stone-400 font-semibold uppercase tracking-wider">Day Streak</span>
           </div>

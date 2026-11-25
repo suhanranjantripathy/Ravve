@@ -5,7 +5,10 @@ const router = Router();
 
 // Comprehensive reading statistics and visual analytics
 router.get('/', (req, res) => {
-  const currentUserId = req.headers['x-user-id'] || 'usr_elena';
+  const currentUserId = req.headers['x-user-id'];
+  if (!currentUserId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
   const targetUserId = req.query.userId || currentUserId;
   const db = getDb();
 
@@ -21,7 +24,7 @@ router.get('/', (req, res) => {
     WHERE ub.user_id = ?
   `).get(targetUserId);
 
-  const streakDays = db.prepare('SELECT reading_streak_days FROM profiles WHERE id = ?').get(targetUserId)?.reading_streak_days || 14;
+  const streakDays = db.prepare('SELECT reading_streak_days FROM profiles WHERE id = ?').get(targetUserId)?.reading_streak_days ?? 0;
 
   // 2. Favorite Genres distribution
   const genresBreakdown = db.prepare(`
@@ -92,18 +95,6 @@ router.get('/', (req, res) => {
     }
   }
 
-  // Ensure nice curve for demo if finishedBooks was small
-  if (monthlyActivity.reduce((acc, m) => acc + m.books, 0) < 5) {
-    monthlyActivity[0].books = 2; monthlyActivity[0].pages = 640;
-    monthlyActivity[1].books = 3; monthlyActivity[1].pages = 980;
-    monthlyActivity[2].books = 1; monthlyActivity[2].pages = 400;
-    monthlyActivity[4].books = 3; monthlyActivity[4].pages = 1100;
-    monthlyActivity[6].books = 4; monthlyActivity[6].pages = 1450;
-    monthlyActivity[7].books = 2; monthlyActivity[7].pages = 720;
-    monthlyActivity[8].books = 3; monthlyActivity[8].pages = 1080;
-    monthlyActivity[10].books = 2; monthlyActivity[10].pages = 680;
-  }
-
   // 6. User rating distribution
   const ratingDistribution = [
     { stars: '5 Stars', count: 0 },
@@ -125,8 +116,8 @@ router.get('/', (req, res) => {
   res.json({
     summary: {
       books_read: booksReadCount,
-      total_pages: pagesSummary.total_pages_read || 3820,
-      average_rating: pagesSummary.avg_rating ? Math.round(pagesSummary.avg_rating * 10) / 10 : 4.4,
+      total_pages: pagesSummary.total_pages_read || 0,
+      average_rating: pagesSummary.avg_rating ? Math.round(pagesSummary.avg_rating * 10) / 10 : 0,
       reading_streak_days: streakDays
     },
     genresBreakdown,

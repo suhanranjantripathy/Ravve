@@ -91,7 +91,7 @@ export default function StatisticsPage() {
             <Star className="w-5 h-5 fill-amberGold" />
           </div>
           <span className="font-serif font-black text-3xl text-stone-900 dark:text-stone-100 block">
-            {summary.average_rating} ★
+            {summary.average_rating > 0 ? `${summary.average_rating} ★` : '—'}
           </span>
           <span className="text-xs text-stone-400 font-semibold uppercase tracking-wider">Average Rating</span>
         </div>
@@ -118,8 +118,12 @@ export default function StatisticsPage() {
                   {m.books}
                 </span>
                 <div
-                  className="w-full max-w-[28px] rounded-t-lg bg-forest-800 dark:bg-emerald-600 group-hover:bg-amberGold transition-all duration-300"
-                  style={{ height: `${Math.max(8, heightPct)}%` }}
+                  className={`w-full max-w-[28px] rounded-t-lg transition-all duration-300 ${
+                    m.books > 0
+                      ? 'bg-forest-800 dark:bg-emerald-600 group-hover:bg-amberGold'
+                      : 'bg-warm-200 dark:bg-stone-800'
+                  }`}
+                  style={{ height: m.books > 0 ? `${Math.max(8, heightPct)}%` : '4px' }}
                   title={`${m.month}: ${m.books} books (${m.pages} pages)`}
                 />
               </div>
@@ -144,24 +148,28 @@ export default function StatisticsPage() {
             Favorite Genres
           </h3>
           <div className="space-y-3">
-            {genresBreakdown.map((g, idx) => {
-              const maxGenreCount = Math.max(...genresBreakdown.map(i => i.count), 1);
-              const pct = (g.count / maxGenreCount) * 100;
-              return (
-                <div key={idx} className="text-xs">
-                  <div className="flex items-center justify-between font-semibold mb-1 text-stone-800 dark:text-stone-200">
-                    <span>{g.genre || 'Other'}</span>
-                    <span className="text-stone-400">{g.count} books</span>
+            {genresBreakdown.length === 0 ? (
+              <p className="text-xs text-stone-400 py-4 text-center">No books shelved yet.</p>
+            ) : (
+              genresBreakdown.map((g, idx) => {
+                const maxGenreCount = Math.max(...genresBreakdown.map(i => i.count), 1);
+                const pct = (g.count / maxGenreCount) * 100;
+                return (
+                  <div key={idx} className="text-xs">
+                    <div className="flex items-center justify-between font-semibold mb-1 text-stone-800 dark:text-stone-200">
+                      <span>{g.genre || 'Other'}</span>
+                      <span className="text-stone-400">{g.count} books</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-warm-100 dark:bg-stone-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-forest-700 dark:bg-emerald-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-warm-100 dark:bg-stone-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-forest-700 dark:bg-emerald-500"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -171,18 +179,22 @@ export default function StatisticsPage() {
             Most Read Authors
           </h3>
           <div className="space-y-3">
-            {topAuthors.map((a, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-warm-50 dark:bg-stone-800/60 text-xs">
-                <div>
-                  <span className="font-bold text-stone-900 dark:text-stone-100 block text-sm">{a.author}</span>
-                  <span className="text-stone-400 text-[11px]">{a.books_read} books read</span>
+            {topAuthors.length === 0 ? (
+              <p className="text-xs text-stone-400 py-4 text-center">Finish a book to see your most read authors.</p>
+            ) : (
+              topAuthors.map((a, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-warm-50 dark:bg-stone-800/60 text-xs">
+                  <div>
+                    <span className="font-bold text-stone-900 dark:text-stone-100 block text-sm">{a.author}</span>
+                    <span className="text-stone-400 text-[11px]">{a.books_read} books read</span>
+                  </div>
+                  <div className="flex items-center gap-1 font-bold text-amberGold">
+                    <Star className="w-3.5 h-3.5 fill-amberGold" />
+                    <span>{Number(a.avg_rating).toFixed(1)}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 font-bold text-amberGold">
-                  <Star className="w-3.5 h-3.5 fill-amberGold" />
-                  <span>{Number(a.avg_rating).toFixed(1)}</span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
